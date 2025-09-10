@@ -16,27 +16,16 @@ uv venv .env
 .env\Scripts\activate
 ```
 
-2. Install IPEX-LLM with NPU support:
-```bash
-uv pip install --pre --upgrade ipex-llm[npu]
-```
-
-3. Install other dependencies:
+2. Install other dependencies:
 ```bash
 uv pip install -e .
 ```
 
-4. Optional: For Llama-3.2-1B-Instruct & Llama-3.2-3B-Instruct
-```bash
-uv pip install transformers==4.45.0 accelerate==0.33.0
-```
-
-5. Verify NPU hardware:
+3. Verify NPU hardware:
 ```bash
 python tests/hardware_test.py
 ```
 
-For more details, see [Intel IPEX-LLM NPU Examples](https://github.com/intel/ipex-llm/tree/main/python/llm/example/NPU/HF-Transformers-AutoModels/LLM)
 ## Usage
 
 ### Run inference:
@@ -50,8 +39,4 @@ python examples/summarize.py
 ```
 
 ## Documentation
-- [Project Guidelines](docs/guidelines.md)
-- [Intel IPEX-LLM Documentation](https://intel.github.io/ipex-llm/)
-
-## Contributing
-Contributions welcome! Please follow our [contribution guidelines](CONTRIBUTING.md).
+- [Intel IPEX-LLM NPU Examples](https://github.com/intel/ipex-llm/tree/main/python/llm/example/NPU/HF-Transformers-AutoModels/LLM)

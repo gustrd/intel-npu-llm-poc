@@ -86,11 +86,7 @@ def main():
     with torch.inference_mode():
         print("finish to load")
         for i in range(1):
-            # Measure prompt processing time
-            prompt_start = time.time()
             _input_ids = tokenizer([text], return_tensors="pt").input_ids
-            prompt_end = time.time()
-            prompt_time = prompt_end - prompt_start
             input_tokens = len(_input_ids[0])
             
             print("-" * 20, f"Run {i+1}", "-" * 20)
@@ -114,22 +110,11 @@ def main():
             
             # Print timing information with tokens per second
             print("-" * 20, "Performance Metrics", "-" * 20)
-            print(f"Prompt processing time: {prompt_time:.4f} s")
-            if prompt_time > 0:
-                print(f"Prompt processing speed: {input_tokens/prompt_time:.2f} t/s")
-            else:
-                print("Prompt processing speed: N/A (time too short)")
             print(f"Token generation time: {gen_time:.4f} s")
             if gen_time > 0:
                 print(f"Token generation speed: {generated_tokens/gen_time:.2f} t/s")
             else:
                 print("Token generation speed: N/A (time too short)")
-            total_time = prompt_time + gen_time
-            print(f"Total inference time: {total_time:.4f} s")
-            if total_time > 0:
-                print(f"Total throughput: {(input_tokens + generated_tokens)/total_time:.2f} t/s")
-            else:
-                print("Total throughput: N/A (time too short)")
 
     print("-" * 80)
     print("done")
