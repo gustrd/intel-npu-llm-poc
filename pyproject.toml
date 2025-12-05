@@ -22,17 +22,11 @@ dev = [
     "flake8",
     "mypy",
 ]
-llama = [
-    "transformers==4.45.0",
-    "accelerate==0.33.0"
-]
 
 [tool.uv]
-index-url = ["https://pytorch-extension.intel.com/release-whl/stable/xpu/us/"]
-extra-index-url = ["https://pytorch-extension.intel.com/release-whl/stable/xpu/us/"]
 index-strategy = "unsafe-best-match"
 no-build-isolation = true
-pre = ["ipex-llm"]  # Allow pre-release versions for ipex-llm
+prerelease = "allow"
 
 [tool.black]
 line-length = 88
