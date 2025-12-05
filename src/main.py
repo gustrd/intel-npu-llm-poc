@@ -1,29 +1,33 @@
 
-import os
-import torch
-import time
 import argparse
+import logging
+import sys
+import os
 
-from transformers import AutoTokenizer, TextStreamer
-from ipex_llm.transformers.npu_model import AutoModelForCausalLM
+# Add project root to sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from transformers.utils import logging
+from src.engine import NPUInferenceEngine
 
-logger = logging.get_logger(__name__)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Predict Tokens using `generate()` API for npu model"
+        description="Predict Tokens using `generate()` API for NPU model"
     )
     parser.add_argument(
         "--repo-id-or-model-path",
         type=str,
         default="Qwen/Qwen2.5-0.5B-Instruct",
-        help="The huggingface repo id for the model to be downloaded"
-        ", or the path to the huggingface checkpoint folder.",
+        help="The huggingface repo id for the model to be downloaded, or the path to the huggingface checkpoint folder.",
     )
-    parser.add_argument('--prompt', type=str, default="What is life?",
-                        help='Prompt to infer')
+    parser.add_argument('--prompt', type=str, default="What is life?", help='Prompt to infer')
     parser.add_argument("--n-predict", type=int, default=128, help="Max tokens to predict.")
     parser.add_argument("--max-context-len", type=int, default=1024)
     parser.add_argument("--max-prompt-len", type=int, default=512)
@@ -32,93 +36,48 @@ def main():
                         help='Low bit optimizations that will be applied to the model.')
     parser.add_argument("--disable-streaming", action="store_true", default=False)
     parser.add_argument("--save-directory", type=str,
-        required=True,
-        help="The path of folder to save converted model, "
-             "If path not exists, lowbit model will be saved there. "
-             "Else, lowbit model will be loaded.",
+        default="./model_weights",
+        help="The path of folder to save converted model."
     )
 
     args = parser.parse_args()
-    model_path = args.repo_id_or_model_path
 
-    if not os.path.exists(args.save_directory):
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.float16,
-            trust_remote_code=True,
-            attn_implementation="eager",
-            load_in_low_bit=args.low_bit,
-            optimize_model=True,
+    try:
+        engine = NPUInferenceEngine(
+            model_path=args.repo_id_or_model_path,
+            save_directory=args.save_directory,
+            low_bit=args.low_bit,
             max_context_len=args.max_context_len,
             max_prompt_len=args.max_prompt_len,
-            quantization_group_size=args.quantization_group_size,
-            save_directory=args.save_directory
+            quantization_group_size=args.quantization_group_size
         )
-        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        tokenizer.save_pretrained(args.save_directory)
-    else:
-        model = AutoModelForCausalLM.load_low_bit(
-            args.save_directory,
-            attn_implementation="eager",
-            torch_dtype=torch.float16,
-            optimize_model=True,
-            max_context_len=args.max_context_len,
-            max_prompt_len=args.max_prompt_len
+
+        engine.load_model()
+
+        logger.info("-" * 80)
+        logger.info("Model loaded successfully")
+        
+        logger.info("-" * 20 + " Input " + "-" * 20)
+        logger.info(f"Prompt: {args.prompt}")
+        
+        metrics = engine.generate(
+            prompt=args.prompt,
+            n_predict=args.n_predict,
+            stream=not args.disable_streaming
         )
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(args.save_directory, trust_remote_code=True)
-        except OSError:
-            # Fall back to loading tokenizer from original model path if save directory doesn't have tokenizer files
-            tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
-    if args.disable_streaming:
-        streamer = None
-    else:
-        streamer = TextStreamer(tokenizer=tokenizer, skip_special_tokens=True)
+        if args.disable_streaming:
+            print(metrics["output_text"])
 
-    print("-" * 80)
-    print("done")
-    messages = [{"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": args.prompt}]
-    text = tokenizer.apply_chat_template(messages,
-                                         tokenize=False,
-                                         add_generation_prompt=True)
-    with torch.inference_mode():
-        print("finish to load")
-        for i in range(1):
-            _input_ids = tokenizer([text], return_tensors="pt").input_ids
-            input_tokens = len(_input_ids[0])
-            
-            print("-" * 20, f"Run {i+1}", "-" * 20)
-            print("-" * 20, "Input", "-" * 20)
-            print(f"Input length: {input_tokens} tokens")
-            print(text)
-            print("-" * 20, "Output", "-" * 20)
-            
-            # Measure token generation time
-            gen_start = time.time()
-            output = model.generate(
-                _input_ids, num_beams=1, do_sample=False, max_new_tokens=args.n_predict, streamer=streamer
-            )
-            gen_end = time.time()
-            gen_time = gen_end - gen_start
-            generated_tokens = len(output[0]) - input_tokens
-            
-            if args.disable_streaming:
-                output_str = tokenizer.decode(output[0], skip_special_tokens=False)
-                print(output_str)
-            
-            # Print timing information with tokens per second
-            print("-" * 20, "Performance Metrics", "-" * 20)
-            print(f"Token generation time: {gen_time:.4f} s")
-            if gen_time > 0:
-                print(f"Token generation speed: {generated_tokens/gen_time:.2f} t/s")
-            else:
-                print("Token generation speed: N/A (time too short)")
+        logger.info("-" * 20 + " Performance Metrics " + "-" * 20)
+        logger.info(f"Token generation time: {metrics['generation_time']:.4f} s")
+        logger.info(f"Token generation speed: {metrics['tokens_per_second']:.2f} t/s")
+        logger.info("-" * 80)
+        logger.info("Success shut down")
 
-    print("-" * 80)
-    print("done")
-    print("success shut down")
+    except Exception as e:
+        logger.error(f"An error occurred: {e}", exc_info=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
